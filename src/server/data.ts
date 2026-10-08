@@ -52,6 +52,7 @@ export async function getOverview(orgId: string | null) {
     const scopeSplit = [...byScope.entries()].map(([label, value]) => ({ label, value: Math.round(value) }));
     return {
       demo: false, org: null, kpis, readiness,
+      hasCriticalGap: allAssess.some((a) => a.hasCriticalGap),
       assessments, requests, evidence: evidenceItems, risks, controls, targets,
       materiality: topics, ghgTrend, scopeSplit,
     };

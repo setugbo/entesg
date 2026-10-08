@@ -10,8 +10,10 @@ export default async function DashboardPage() {
   const d = await getOverview(user?.organisationId ?? null);
   const kpis = (d as { kpis?: { readiness: number; criticalGaps: number; ghg2026: number; evidenceCoverage: number; controlCoverage: number; openRequests: number } | null }).kpis
     ?? { readiness: 68, criticalGaps: 3, ghg2026: 12480, evidenceCoverage: 74, controlCoverage: 61, openRequests: 14 };
+  const overview = d as { hasCriticalGap?: boolean; demo?: boolean };
+  const gap = overview.hasCriticalGap === true;
   const cards: [string, string, string][] = [
-    ["ESG Readiness", `${kpis.readiness}%`, (d as { hasCriticalGap?: boolean }).hasCriticalGap ?? (d as { demo?: boolean }).demo ? "3 critical gaps override aggregate" : "No critical gaps"],
+    ["ESG Readiness", `${kpis.readiness}%`, gap ? "CRITICAL GAP — overrides aggregate" : "No critical gaps"],
     ["GHG 2026 (YTD)", `${Number(kpis.ghg2026).toLocaleString()} tCO₂e`, "Scope 1+2+3, versioned runs"],
     ["Evidence coverage", `${kpis.evidenceCoverage}%`, "Accepted / total linked"],
     ["Control coverage", `${kpis.controlCoverage}%`, "Tested effective / total"],
