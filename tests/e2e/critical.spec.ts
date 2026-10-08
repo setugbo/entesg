@@ -17,7 +17,7 @@ test("critical ESG lifecycle", async ({ page }) => {
   await expect(page).toHaveURL(/dashboard/, { timeout: 20_000 });
 
   // Dashboard renders real KPIs
-  await expect(page.getByText("ESG Readiness")).toBeVisible();
+  await expect(page.getByText("ESG Readiness").first()).toBeVisible();
 
   // Assessments list → open first → answer → recompute
   await page.goto("/assessments", { waitUntil: "networkidle" });
