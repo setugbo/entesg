@@ -1,5 +1,6 @@
 "use server";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import * as s from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
@@ -105,6 +106,7 @@ export async function createRecord(module: string, form: FormData): Promise<stri
       throw new Error(`Create is not supported for module "${module}".`);
   }
   await logAudit({ organisationId: orgId, userId: me.id, action: `${entity}.create`, entity, entityId });
+  revalidatePath(`/${module}`);
   return entityId;
 }
 
@@ -128,6 +130,8 @@ async function metricTransition(id: string, to: typeof s.metricValues.$inferSele
   await d.update(s.metricValues).set(patch).where(eq(s.metricValues.id, id));
   await logAudit({ organisationId: v.organisationId, userId: me.id, action, entity: "metric_value", entityId: id, newValue: { to } });
   await notify(v.organisationId, v.submittedBy, `Metric value ${to}`, `Period ${v.period} · value ${v.value}`);
+  revalidatePath("/metrics");
+}
 }
 export async function validateMetricValue(id: string) { return metricTransition(id, "validated", "metric.validate"); }
 export async function approveMetricValue(id: string) { return metricTransition(id, "approved", "metric.approve"); }
@@ -143,6 +147,9 @@ export async function recomputeScore(assessmentId: string) {
   assertTenant(me, a.organisationId);
   const r = await computeAssessmentScore(assessmentId);
   await logAudit({ organisationId: a.organisationId, userId: me.id, action: "assessment.score", entity: "assessment", entityId: assessmentId, newValue: { overall: r.overall, band: r.band } });
+  revalidatePath("/dashboard");
+  revalidatePath("/assessments");
+  revalidatePath(`/assessments/${assessmentId}`);
   return r.overall;
 }
 
@@ -156,6 +163,8 @@ export async function linkEvidence(evidenceId: string, entityType: string, entit
   assertTenant(me, e.organisationId);
   await d.insert(s.evidenceLinks).values({ evidenceId, entityType, entityId: entityId as never });
   await logAudit({ organisationId: e.organisationId, userId: me.id, action: "evidence.link", entity: "evidence", entityId: evidenceId, newValue: { entityType, entityId } });
+  revalidatePath(`/evidence/${evidenceId}`);
+}
 }
 
 // ---------- Report data links (approved-data gate lives at publish time) ----------
@@ -169,6 +178,8 @@ export async function linkReportData(reportId: string, entityType: string, entit
   const secs = await d.select().from(s.reportSections).where(eq(s.reportSections.reportId, reportId));
   await d.insert(s.reportDataLinks).values({ reportId, sectionId: secs[0]?.id ?? null, entityType, entityId: entityId as never });
   await logAudit({ organisationId: r.organisationId, userId: me.id, action: "report.link", entity: "report", entityId: reportId, newValue: { entityType, entityId } });
+  revalidatePath(`/reports/${reportId}`);
+}
 }
 
 // ---------- Escalations: overdue data requests ----------
@@ -187,6 +198,8 @@ export async function escalateOverdue() {
     n++;
   }
   await logAudit({ organisationId: me.organisationId, userId: me.id, action: "escalation.run", entity: "data_request", newValue: { count: n } });
+  revalidatePath("/data-requests");
+  revalidatePath("/notifications");
   return n;
 }
 
@@ -232,6 +245,8 @@ export async function createUser(form: FormData) {
   await d.insert(s.userRoles).values({ userId: u.id, roleId: role.id, organisationId: targetOrg }).onConflictDoNothing();
   await logAudit({ organisationId: targetOrg, userId: me.id, action: "user.invite", entity: "user", entityId: u.id, newValue: { email, roleKey } });
   await notify(targetOrg, u.id, "Welcome to entESG", `You were added as ${roleKey}.`);
+  revalidatePath("/admin");
+}
 }
 
 function randomDefaultPassword() {
@@ -251,10 +266,14 @@ export async function assignConsultant(form: FormData) {
   }
   await d.insert(s.consultantClients).values({ userId, organisationId }).onConflictDoNothing();
   await logAudit({ organisationId, userId: me.id, action: "consultant.assign", entity: "organisation", entityId: organisationId, newValue: { userId } });
+  revalidatePath("/consultant");
+  revalidatePath("/admin");
+}
 }
 
 // ---------- Comments ----------
 export async function postComment(entityType: string, entityId: string, form: FormData) {
   const { addComment } = await import("./actions");
   await addComment(entityType, entityId, String(form.get("body") ?? ""));
+  revalidatePath(`/${entityType.replace(/_/g, "-")}s/${entityId}`);
 }

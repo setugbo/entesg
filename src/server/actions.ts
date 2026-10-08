@@ -1,5 +1,6 @@
 "use server";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import * as s from "@/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -71,6 +72,9 @@ async function transitionAssessment(id: string, to: typeof s.assessments.$inferS
   await logAudit({ organisationId: a.organisationId, userId: me.id, action, entity: "assessment", entityId: id, newValue: { to } });
   const { notify } = await import("./notify");
   await notify(a.organisationId, a.ownerId, `Assessment ${to.replace(/_/g, " ")}`, a.title);
+  revalidatePath("/assessments");
+  revalidatePath(`/assessments/${id}`);
+}
 }
 
 export async function submitAssessment(id: string) { return transitionAssessment(id, "submitted", "assessment.submit"); }
@@ -95,6 +99,8 @@ export async function saveAnswer(assessmentId: string, questionId: string, value
   }
   if (a.status === "draft") await d.update(s.assessments).set({ status: "in_progress" }).where(eq(s.assessments.id, assessmentId));
   await logAudit({ organisationId: a.organisationId, userId: me.id, action: "assessment.answer", entity: "assessment", entityId: assessmentId });
+  revalidatePath(`/assessments/${assessmentId}`);
+}
 }
 
 // ---------- Data requests ----------
@@ -110,6 +116,9 @@ async function transitionRequest(id: string, to: typeof s.dataRequests.$inferSel
   await logAudit({ organisationId: r.organisationId, userId: me.id, action, entity: "data_request", entityId: id, newValue: { to } });
   const { notify } = await import("./notify");
   await notify(r.organisationId, r.ownerId, `Data request ${to.replace(/_/g, " ")}`, r.title);
+  revalidatePath("/data-requests");
+  revalidatePath(`/data-requests/${id}`);
+}
 }
 export async function sendRequest(id: string) { return transitionRequest(id, "sent", "request.send"); }
 export async function submitRequest(id: string) { return transitionRequest(id, "submitted", "request.submit"); }
@@ -159,6 +168,7 @@ export async function submitMetricValue(input: { metricId: string; period: strin
     await d.insert(s.validationResults).values({ organisationId: me.organisationId, metricValueId: v.id, ruleId: rule.id, passed, message: msg });
   }
   await logAudit({ organisationId: me.organisationId, userId: me.id, action: "metric.submit", entity: "metric_value", entityId: v.id, newValue: input });
+  revalidatePath("/metrics");
   return v.id;
 }
 
@@ -177,6 +187,9 @@ export async function reviewEvidence(id: string, decision: "approved" | "rejecte
   await logAudit({ organisationId: e.organisationId, userId: me.id, action: `evidence.${decision}`, entity: "evidence", entityId: id });
   const { notify } = await import("./notify");
   await notify(e.organisationId, e.uploadedBy, `Evidence ${decision}`, e.name);
+  revalidatePath("/evidence");
+  revalidatePath(`/evidence/${id}`);
+}
 }
 
 // ---------- GHG ----------
@@ -207,6 +220,7 @@ export async function runGhgCalculation(input: { scope: string; period: string; 
   }
   await d.update(s.calculationRuns).set({ totalTco2e: String(total) as never }).where(eq(s.calculationRuns.id, run.id));
   await logAudit({ organisationId: me.organisationId, userId: me.id, action: "ghg.calculate", entity: "calculation_run", entityId: run.id, newValue: { total } });
+  revalidatePath("/emissions");
   return { runId: run.id, total };
 }
 
@@ -220,6 +234,8 @@ export async function approveGhgRun(id: string) {
   await requirePerm(me, "ghg.approve");
   await d.update(s.calculationRuns).set({ status: "approved" }).where(eq(s.calculationRuns.id, id));
   await logAudit({ organisationId: r.organisationId, userId: me.id, action: "ghg.approve", entity: "calculation_run", entityId: id });
+  revalidatePath("/emissions");
+}
 }
 
 // ---------- Risks / controls / targets / reports ----------
@@ -247,6 +263,8 @@ export async function testControl(controlId: string, result: "effective" | "part
   await requirePerm(me, "control.test");
   await d.insert(s.controlTests).values({ controlId, testerId: me.id, result, notes });
   await logAudit({ organisationId: c.organisationId, userId: me.id, action: "control.test", entity: "control", entityId: controlId, newValue: { result } });
+  revalidatePath("/controls");
+}
 }
 
 export async function createTarget(input: { title: string; metricId?: string; kind?: string; baselineYear?: number; baselineValue?: number; targetYear?: number; targetValue?: number }) {
@@ -276,6 +294,7 @@ export async function createReport(input: { title: string; period?: string }) {
     await d.insert(s.reportSections).values({ reportId: r.id, title: sections[i], position: i, content: `Auto-assembled from approved data. Section ${i + 1} pending narrative.` });
   }
   await logAudit({ organisationId: me.organisationId, userId: me.id, action: "report.create", entity: "report", entityId: r.id });
+  revalidatePath("/reports");
   return r.id;
 }
 
@@ -300,6 +319,9 @@ export async function transitionReport(id: string, to: "review" | "approval" | "
   }
   await d.update(s.reports).set({ status: to }).where(eq(s.reports.id, id));
   await logAudit({ organisationId: r.organisationId, userId: me.id, action: `report.${to}`, entity: "report", entityId: id });
+  revalidatePath("/reports");
+  revalidatePath(`/reports/${id}`);
+}
 }
 
 export async function addComment(entityType: string, entityId: string, body: string) {

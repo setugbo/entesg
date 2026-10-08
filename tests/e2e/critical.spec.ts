@@ -20,10 +20,13 @@ test("critical ESG lifecycle", async ({ page }) => {
   await expect(page.getByText("ESG Readiness")).toBeVisible();
 
   // Assessments list → open first → answer → recompute
-  await page.goto("/assessments");
+  await page.goto("/assessments", { waitUntil: "networkidle" });
   const open = page.getByRole("link", { name: /Open/ }).first();
   if (await open.count()) {
-    await open.first().click();
+    await Promise.all([
+      page.waitForURL(/assessments\/.+/, { timeout: 60_000 }),
+      open.first().click(),
+    ]);
     const answer = page.locator('input[name="value"]').first();
     if (await answer.count()) {
       await answer.fill("yes");
