@@ -227,6 +227,8 @@ export const questions = pgTable("questions", {
   requiredEvidence: boolean("required_evidence").default(false),
   applicability: jsonb("applicability").$type<Record<string, unknown>>().default({}),
   ownerRole: varchar("owner_role", { length: 64 }),
+  ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
+  reviewerId: uuid("reviewer_id").references(() => users.id, { onDelete: "set null" }),
   requirementId: uuid("requirement_id").references(() => requirements.id, { onDelete: "set null" }),
   position: integer("position").default(0),
 });

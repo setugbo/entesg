@@ -395,6 +395,50 @@ export async function linkDisclosureRequirement(disclosureId: string, form: Form
   revalidatePath(`/disclosures/${disclosureId}`);
 }
 
+// ---------- Assessment & question assignment ----------
+export async function assignAssessment(assessmentId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "assessment.edit");
+  const a = (await d.select().from(s.assessments).where(eq(s.assessments.id, assessmentId)).limit(1))[0];
+  if (!a) throw new Error("Assessment not found.");
+  assertTenant(me, a.organisationId);
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  // Assignees must belong to the same organisation (or be super-admin scope).
+  for (const uid of [g("ownerId"), g("reviewerId"), g("approverId")]) {
+    if (!uid) continue;
+    const u = (await d.select().from(s.users).where(eq(s.users.id, uid)).limit(1))[0];
+    if (!u) throw new Error("Assignee not found.");
+    if (!me.roleKeys.includes("SUPER_ADMIN") && u.organisationId !== a.organisationId) throw new Error("Assignee must belong to this organisation.");
+  }
+  await d.update(s.assessments).set({
+    ownerId: (g("ownerId") ?? a.ownerId) as never,
+    reviewerId: (g("reviewerId") ?? a.reviewerId) as never,
+    approverId: (g("approverId") ?? a.approverId) as never,
+  }).where(eq(s.assessments.id, assessmentId));
+  await logAudit({ organisationId: a.organisationId, userId: me.id, action: "assessment.assign", entity: "assessment", entityId: assessmentId, newValue: { ownerId: g("ownerId"), reviewerId: g("reviewerId"), approverId: g("approverId") } });
+  const { notify } = await import("./notify");
+  await notify(a.organisationId, g("ownerId"), "Assessment assigned to you", a.title);
+  revalidatePath(`/assessments/${assessmentId}`);
+  revalidatePath("/dashboard");
+}
+
+export async function assignQuestion(questionId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "requirement.manage");
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  await d.update(s.questions).set({ ownerId: g("ownerId"), reviewerId: g("reviewerId") }).where(eq(s.questions.id, questionId));
+  const q = (await d.select().from(s.questions).where(eq(s.questions.id, questionId)).limit(1))[0];
+  const sec = q ? (await d.select().from(s.questionnaireSections).where(eq(s.questionnaireSections.id, q.sectionId)).limit(1))[0] : undefined;
+  await logAudit({ organisationId: me.organisationId, userId: me.id, action: "question.assign", entity: "question", entityId: questionId, newValue: { ownerId: g("ownerId"), reviewerId: g("reviewerId") } });
+  if (g("ownerId")) {
+    const { notify } = await import("./notify");
+    await notify(me.organisationId, g("ownerId"), "Question assigned to you", q?.code ?? questionId);
+  }
+  if (sec?.questionnaireId) revalidatePath(`/questionnaires/${sec.questionnaireId}`);
+}
+
 // ---------- Questionnaire builder ----------
 export async function createQuestionnaire(form: FormData) {
   const d = needDb();
@@ -434,7 +478,8 @@ export async function createQuestion(sectionId: string, form: FormData) {
     sectionId: sectionId as never, code: String(form.get("code")), text: String(form.get("text")),
     type: (g("type") ?? "yes_no") as never, guidance: g("guidance"),
     weight: (g("weight") ?? "1") as never, requiredEvidence: g("requiredEvidence") === "yes",
-    ownerRole: g("ownerRole"), requirementId: g("requirementId"), position: siblings.length,
+    ownerRole: g("ownerRole"), ownerId: g("ownerId"), reviewerId: g("reviewerId"),
+    requirementId: g("requirementId"), position: siblings.length,
   }).returning();
   const opts = String(form.get("options") ?? "").split(",").map((o) => o.trim()).filter(Boolean);
   for (let i = 0; i < opts.length; i++) {

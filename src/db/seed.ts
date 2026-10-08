@@ -218,6 +218,8 @@ async function main() {
   const manager = (await db.select().from(s.users).where(eq(s.users.email, "esg.manager@greenharvest.ng")))[0];
   const approver = (await db.select().from(s.users).where(eq(s.users.email, "approver@greenharvest.ng")))[0];
   const ops = (await db.select().from(s.users).where(eq(s.users.email, "operations@greenharvest.ng")))[0];
+  const hse = (await db.select().from(s.users).where(eq(s.users.email, "hse@greenharvest.ng")))[0];
+  const reviewerU = (await db.select().from(s.users).where(eq(s.users.email, "reviewer@greenharvest.ng")))[0];
   const siteList = await db.select().from(s.sites);
   const lagos = siteList.find((x) => x.name.includes("Lagos"));
   const ogun = siteList.find((x) => x.name.includes("Ogun"));
@@ -237,6 +239,26 @@ async function main() {
     }
     const { computeAssessmentScore } = await import("../server/scoring");
     await computeAssessmentScore(assess.id);
+  }
+  // Accountability + per-question assignment (the delegation model; runs on fresh and repeat seeds)
+  assess = (await db.select().from(s.assessments).where(eq(s.assessments.organisationId, org.id))).find((a) => a.title.includes("Q3 2026"));
+  if (assess) {
+    await db.update(s.assessments).set({
+      ownerId: analyst?.id ?? null, reviewerId: reviewerU?.id ?? null, approverId: approver?.id ?? null,
+    }).where(eq(s.assessments.id, assess.id));
+    const qnSecs = await db.select().from(s.questionnaireSections).where(eq(s.questionnaireSections.questionnaireId, assess.questionnaireId));
+    const opsSecs = new Set(qnSecs.filter((x) => ["Metrics", "Data Completeness", "Evidence"].includes(x.title)).map((x) => x.id));
+    const allQs = await db.select().from(s.questions);
+    for (const q of allQs.filter((x) => opsSecs.has(x.sectionId))) {
+      if (!q.ownerId && ops) await db.update(s.questions).set({ ownerId: ops.id }).where(eq(s.questions.id, q.id));
+    }
+    for (const q of allQs.filter((x) => !opsSecs.has(x.sectionId) && qnSecs.some((sec) => sec.id === x.sectionId))) {
+      if (!q.ownerId && analyst) await db.update(s.questions).set({ ownerId: analyst.id }).where(eq(s.questions.id, q.id));
+    }
+    if (hse) {
+      const evi = allQs.find((x) => x.code === "EVI-01");
+      if (evi && !evi.ownerId) await db.update(s.questions).set({ ownerId: hse.id }).where(eq(s.questions.id, evi.id));
+    }
   }
 
   const reqSeed: [string, string, string, string][] = [

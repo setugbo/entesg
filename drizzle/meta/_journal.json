@@ -15,6 +15,13 @@
       "when": 1791416655703,
       "tag": "0001_workable_clint_barton",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791455539484,
+      "tag": "0002_lyrical_the_initiative",
+      "breakpoints": true
     }
   ]
 }

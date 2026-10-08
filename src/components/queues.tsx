@@ -42,6 +42,39 @@ export async function PendingMetricValues() {
   );
 }
 
+/** Questions assigned to the current user, with answer status per latest open assessment. */
+export async function MyAssignedQuestions() {
+  const me = await getSessionUser();
+  if (!db || !me?.organisationId) return null;
+  try {
+    const qns = await db.select().from(s.questionnaires);
+    const mine = qns.filter((q) => !q.organisationId || q.organisationId === me.organisationId);
+    const qids = new Set(mine.map((q) => q.id));
+    const secs = await db.select().from(s.questionnaireSections);
+    const mySecs = secs.filter((x) => qids.has(x.questionnaireId));
+    const allQ = await db.select().from(s.questions);
+    const assigned = allQ.filter((q) => q.ownerId === me.id && mySecs.some((x) => x.id === q.sectionId));
+    if (!assigned.length) return null;
+    const assesses = await db.select().from(s.assessments).where(eq(s.assessments.organisationId, me.organisationId));
+    const open = assesses.filter((a) => ["draft", "in_progress", "submitted", "under_review", "returned"].includes(a.status));
+    const answers = await db.select().from(s.assessmentAnswers);
+    const rows = assigned.slice(0, 8).map((q) => {
+      const sec = mySecs.find((x) => x.id === q.sectionId);
+      const a = open.find((x) => x.questionnaireId === sec?.questionnaireId);
+      const done = a ? answers.some((x) => x.assessmentId === a.id && x.questionId === q.id && String(x.value ?? "").trim() !== "") : false;
+      return { q, assessmentId: a?.id ?? null, assessment: a?.title ?? mine.find((x) => x.id === sec?.questionnaireId)?.title ?? "—", done };
+    });
+    return (
+      <Card>
+        <div className="border-b border-slate-100 px-5 py-3 text-sm font-bold">My assigned questions ({assigned.length})</div>
+        <DataTable columns={["Question", "Assessment", "Status", ""]}
+          rows={rows.map((r) => [`${r.q.code} — ${r.q.text.slice(0, 70)}`, r.assessment.slice(0, 40),
+            r.done ? "answered" : "todo",
+            r.assessmentId ? <a key={r.q.id} href={`/assessments/${r.assessmentId}`} className="font-semibold text-emerald-800">Answer →</a> : "—"])} />
+      </Card>
+    );
+  } catch { return null; }
+}
 /** Draft GHG runs awaiting approval. */
 export async function DraftGhgRuns() {
   const me = await getSessionUser();

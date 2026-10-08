@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { PageHeader, Card, CardHeader, Badge, DataTable } from "@/components/ui";
 import { TrendChart, Bars } from "@/components/charts";
+import { MyAssignedQuestions } from "@/components/queues";
 import { getSessionUser } from "@/lib/auth";
 import { getOverview } from "@/server/data";
 import Link from "next/link";
@@ -54,6 +55,7 @@ export default async function DashboardPage() {
           </div>
         </Card>
       )}
+      {isOwner && <div className="mt-4"><MyAssignedQuestions /></div>}
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <Card><CardHeader title="GHG trend (tCO₂e)" sub="Versioned calculation runs" /><div className="p-4"><TrendChart data={ghgTrend} /></div></Card>
         <Card><CardHeader title="Emissions by scope" sub="Latest approved runs" /><div className="p-4"><Bars data={scopeSplit} /></div></Card>
