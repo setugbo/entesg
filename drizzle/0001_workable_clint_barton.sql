@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "req_fw_code_uidx" ON "requirements" USING btree ("framework_version_id","code");
