@@ -11,7 +11,7 @@ const PASSWORD = process.env.E2E_PASSWORD ?? "GreenHarvest2026!";
 
 test("critical ESG lifecycle", async ({ page }) => {
   await page.goto("/login");
-  await page.getByPlaceholder("admin@greenharvest.ng").fill(EMAIL);
+  await page.locator('input[name="email"]').fill(EMAIL);
   await page.locator('input[name="password"]').fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/dashboard/, { timeout: 20_000 });
