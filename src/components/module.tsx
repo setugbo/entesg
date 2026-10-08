@@ -122,8 +122,8 @@ export function ModulePage(moduleKey: string) {
             <NotificationsList />
           ) : (
             <Card><DataTable
-              columns={m.linkPrefix ? [...m.columns, ""] : m.columns}
-              rows={m.rows.map((r) => (m.linkPrefix
+              columns={m.linkPrefix && !m.demo ? [...m.columns, ""] : m.columns}
+              rows={m.rows.map((r) => (m.linkPrefix && !m.demo
                 ? [...r.cells, <a key={r.id ?? r.cells[0]} href={`${m.linkPrefix}/${r.id}`} className="font-semibold text-emerald-800">Open →</a>]
                 : [...r.cells]))}
             /></Card>

@@ -40,6 +40,7 @@ export async function getModule(key: string, orgId: string | null): Promise<Modu
   const fallback = DEMO_TABLES[key] ?? { columns: ["Item"], rows: [] as string[][] };
   const toData = (): ModuleData => ({ columns: fallback.columns, rows: demoRows(fallback.rows, key), demo: true, linkPrefix: fallback.linkPrefix });
   if (!db || !orgId) return toData();
+  const emptyLive = (): ModuleData => ({ columns: fallback.columns, rows: [], demo: false, linkPrefix: fallback.linkPrefix });
   try {
     switch (key) {
       case "metrics": {
@@ -88,6 +89,6 @@ export async function getModule(key: string, orgId: string | null): Promise<Modu
       default:
         break;
     }
-  } catch { /* fallback */ }
-  return toData();
+  } catch { /* fall through to empty live state */ }
+  return emptyLive();
 }

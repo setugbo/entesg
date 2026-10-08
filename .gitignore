@@ -43,3 +43,5 @@ next-env.d.ts
 /uploads/
 .env
 .next/
+.vercel
+.env*

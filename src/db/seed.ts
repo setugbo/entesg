@@ -213,6 +213,97 @@ async function main() {
     if (!ex) await db.insert(s.targets).values({ organisationId: org.id, title: t[0], kind: t[1], baselineYear: 2023, targetYear: 2030 });
   }
 
+  // Live workflow trail (real records across the full lifecycle)
+  const analyst = (await db.select().from(s.users).where(eq(s.users.email, "analyst@greenharvest.ng")))[0];
+  const manager = (await db.select().from(s.users).where(eq(s.users.email, "esg.manager@greenharvest.ng")))[0];
+  const approver = (await db.select().from(s.users).where(eq(s.users.email, "approver@greenharvest.ng")))[0];
+  const ops = (await db.select().from(s.users).where(eq(s.users.email, "operations@greenharvest.ng")))[0];
+  const siteList = await db.select().from(s.sites);
+  const lagos = siteList.find((x) => x.name.includes("Lagos"));
+  const ogun = siteList.find((x) => x.name.includes("Ogun"));
+
+  let assess = (await db.select().from(s.assessments).where(eq(s.assessments.organisationId, org.id))).find((a) => a.title.includes("Q3 2026"));
+  if (!assess && qn && analyst) {
+    [assess] = await db.insert(s.assessments).values({
+      organisationId: org.id, questionnaireId: qn.id, title: "IFRS S1/S2 Readiness — Q3 2026",
+      status: "under_review", ownerId: analyst.id, reviewerId: (await db.select().from(s.users).where(eq(s.users.email, "reviewer@greenharvest.ng")))[0]?.id ?? null,
+    }).returning();
+    const qs = await db.select().from(s.questions);
+    for (const q of qs.filter((x) => x.type === "yes_no").slice(0, 8)) {
+      await db.insert(s.assessmentAnswers).values({ assessmentId: assess.id, questionId: q.id, value: "yes" as never, score: "1" as never, answeredBy: analyst.id });
+    }
+    for (const q of qs.filter((x) => x.type === "long_text").slice(0, 4)) {
+      await db.insert(s.assessmentAnswers).values({ assessmentId: assess.id, questionId: q.id, value: "Documented process in place; evidence filed in the library." as never, answeredBy: analyst.id });
+    }
+    const { computeAssessmentScore } = await import("../server/scoring");
+    await computeAssessmentScore(assess.id);
+  }
+
+  const reqSeed: [string, string, string, string][] = [
+    ["Submit electricity consumption — Lagos Plant — August 2026", "sent", "2026-09-10", "high"],
+    ["Submit diesel consumption — Ogun fleet — August 2026", "submitted", "2026-09-08", "critical"],
+    ["Submit water abstraction — Ogun — August 2026", "validated", "2026-09-08", "medium"],
+  ];
+  for (const [title, status, due, pri] of reqSeed) {
+    const exists = (await db.select().from(s.dataRequests).where(eq(s.dataRequests.organisationId, org.id))).some((r) => r.title === title);
+    if (!exists) {
+      await db.insert(s.dataRequests).values({
+        organisationId: org.id, title, period: "2026-08", dueDate: due, priority: pri,
+        status: status as never, ownerId: ops?.id ?? null, createdBy: manager?.id ?? null,
+      });
+    }
+  }
+
+  const metricList = await db.select().from(s.metrics);
+  const elc = metricList.find((m) => m.code === "ELC" && m.organisationId === org.id)?.id;
+  const dsl = metricList.find((m) => m.code === "DSL" && m.organisationId === org.id)?.id;
+  const wtr = metricList.find((m) => m.code === "WTR" && m.organisationId === org.id)?.id;
+  const mvSeed: [string | undefined, string, number, string, string | undefined][] = [
+    [elc, "2026-08", 84200, "submitted", lagos?.id],
+    [dsl, "2026-08", 12400, "validated", ogun?.id],
+    [wtr, "2026-08", 9800, "approved", lagos?.id],
+  ];
+  for (const [mid, period, val, status, site] of mvSeed) {
+    if (!mid) continue;
+    const exists = (await db.select().from(s.metricValues).where(eq(s.metricValues.organisationId, org.id))).some((v) => v.metricId === mid && v.period === period);
+    if (!exists) {
+      await db.insert(s.metricValues).values({
+        organisationId: org.id, metricId: mid, period, value: String(val) as never, siteId: site ?? null,
+        status: status as never, submittedBy: ops?.id ?? null,
+        reviewedBy: status !== "submitted" ? manager?.id ?? null : null,
+        approvedBy: status === "approved" ? approver?.id ?? null : null,
+      });
+    }
+  }
+
+  const dslFactor = (await db.select().from(s.emissionFactors).where(eq(s.emissionFactors.code, "DSL-L")))[0];
+  const gridFactor = (await db.select().from(s.emissionFactors).where(eq(s.emissionFactors.code, "GRID-NG-KWH")))[0];
+  let run = (await db.select().from(s.calculationRuns).where(eq(s.calculationRuns.organisationId, org.id))).find((r) => r.period === "2026-08" && r.scope === "Scope 1");
+  if (!run && dslFactor && manager) {
+    [run] = await db.insert(s.calculationRuns).values({ organisationId: org.id, methodologyId: meth.id, scope: "Scope 1", period: "2026-08", status: "approved", createdBy: manager.id }).returning();
+    const t = (12400 * Number(dslFactor.factorKgco2e)) / 1000;
+    const [ci] = await db.insert(s.calculationInputs).values({ runId: run.id, activityData: "12400" as never, unit: "L", factorId: dslFactor.id, siteId: ogun?.id ?? null, label: "Diesel — Ogun fleet — Aug 2026" }).returning();
+    await db.insert(s.calculationOutputs).values({ runId: run.id, inputId: ci.id, emissionsTco2e: String(t) as never, detail: { factor: dslFactor.code, methodology: "GHG Protocol" } as never });
+    await db.update(s.calculationRuns).set({ totalTco2e: String(t) as never }).where(eq(s.calculationRuns.id, run.id));
+  }
+  let run2 = (await db.select().from(s.calculationRuns).where(eq(s.calculationRuns.organisationId, org.id))).find((r) => r.period === "2026-08" && r.scope === "Scope 2");
+  if (!run2 && gridFactor && manager) {
+    [run2] = await db.insert(s.calculationRuns).values({ organisationId: org.id, methodologyId: meth.id, scope: "Scope 2", period: "2026-08", status: "approved", createdBy: manager.id }).returning();
+    const t = (84200 * Number(gridFactor.factorKgco2e)) / 1000;
+    const [ci] = await db.insert(s.calculationInputs).values({ runId: run2.id, activityData: "84200" as never, unit: "kWh", factorId: gridFactor.id, siteId: lagos?.id ?? null, label: "Grid electricity — Lagos — Aug 2026" }).returning();
+    await db.insert(s.calculationOutputs).values({ runId: run2.id, inputId: ci.id, emissionsTco2e: String(t) as never, detail: { factor: gridFactor.code, methodology: "GHG Protocol" } as never });
+    await db.update(s.calculationRuns).set({ totalTco2e: String(t) as never }).where(eq(s.calculationRuns.id, run2.id));
+  }
+
+  const repExists = (await db.select().from(s.reports).where(eq(s.reports.organisationId, org.id))).some((r) => r.title.includes("FY2026"));
+  if (!repExists && manager) {
+    const [rep] = await db.insert(s.reports).values({ organisationId: org.id, title: "FY2026 Sustainability Report (IFRS S1/S2)", period: "2026", status: "draft", createdBy: manager.id }).returning();
+    const secs = ["Governance & Strategy", "Materiality", "Climate & GHG (IFRS S2)", "Environment — Energy, Water, Waste", "Social & Workforce", "Assurance Readiness"];
+    for (let i = 0; i < secs.length; i++) {
+      await db.insert(s.reportSections).values({ reportId: rep.id, title: secs[i], position: i, content: "Assembled from approved data at publish time." });
+    }
+  }
+
   // Consultant assignment (multi-client access demo)
   const consultant = (await db.select().from(s.users).where(eq(s.users.email, "consultant@partner.ng")))[0];
   if (consultant) {

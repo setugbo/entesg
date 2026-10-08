@@ -9,7 +9,8 @@ import Link from "next/link";
 
 export default async function AssessmentsPage() {
   const user = await getSessionUser();
-  let rows: { id: string; title: string; status: string; score?: string | null; readinessBand?: string | null }[] = DEMO.assessments;
+  const live = Boolean(db && user?.organisationId);
+  let rows: { id: string; title: string; status: string; score?: string | null; readinessBand?: string | null }[] = live ? [] : DEMO.assessments;
   if (db && user?.organisationId) {
     try {
       const r = await db.select().from(s.assessments).where(eq(s.assessments.organisationId, user.organisationId)).orderBy(desc(s.assessments.updatedAt));
