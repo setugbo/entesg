@@ -14,6 +14,8 @@ async function main() {
     console.log("reports:", (await sql`delete from reports where title like 'E2E%'`).count);
     console.log("metric_values:", (await sql`delete from metric_values where period = '2026-09'`).count);
     console.log("runs:", (await sql`delete from calculation_runs where period = '2026-09'`).count);
+    console.log("sections:", (await sql`delete from questionnaire_sections where title like 'E2E%'`).count);
+    console.log("control_tests:", (await sql`delete from control_tests where notes like 'E2E%'`).count);
   } finally {
     await sql.end();
   }

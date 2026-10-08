@@ -95,6 +95,16 @@ date, jurisdiction, sector, applicability JSON, reviewer, interpretation, and va
 **Lifecycle:** `draft → in_progress → submitted → under_review → returned → approved`.
 Every transition records an approval row + audit event + notifies the owner.
 
+**Assignment model (three layers):**
+1. **Questionnaire** = reusable template (sections + questions). Built once, never answered.
+2. **Assessment** = one run of a template, carrying owner/reviewer/approver accountability.
+   Set them on `/assessments/[id]` → *Assign owner / reviewer / approver* (same-org users only).
+3. **Question owners** = per-question delegation. Set in the questionnaire builder
+   (owner picker on new questions, or *Assign / reassign a question*), shown as name pills
+   on each question. Owners get a **"Assigned to you"** quick-answer section on the
+   assessment page plus a **"My assigned questions"** queue (answered/todo + Answer → links)
+   on their dashboard.
+
 **Steps**
 1. `/assessments` → **New assessment** → title + questionnaire → **Create & open**.
 2. On `/assessments/[id]`, answer each question (**Save** per row, optional comment).
