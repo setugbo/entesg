@@ -16,7 +16,7 @@ const META: Record<string, { title: string; sub: string; create?: Field[]; submi
     create: [{ name: "topic", label: "Topic", required: true }, { name: "category", label: "Category (Environmental/Social/Governance)" }, { name: "impact", label: "Impact score 1–4", type: "number", placeholder: "3" }, { name: "financial", label: "Financial score 1–4", type: "number", placeholder: "3" }, { name: "rationale", label: "Rationale" }] },
   metrics: { title: "Metrics", sub: "Metric engine: code, category, unit, frequency, owner, methodology, period values and approvals.",
     create: [{ name: "code", label: "Code", required: true, placeholder: "ELC" }, { name: "name", label: "Name", required: true }, { name: "frequency", label: "Frequency", options: ["monthly", "quarterly", "annually"] }, { name: "source", label: "Source" }],
-    extra: [{ href: "/metrics/submit", label: "Submit a value" }] },
+    extra: [{ href: "/metrics/submit", label: "Submit a value" }, { href: "/api/metrics/export", label: "Export CSV" }] },
   "data-requests": { title: "Data Requests", sub: "Request data from owners: Draft → Sent → In Progress → Submitted → Returned → Validated → Approved.",
     create: [{ name: "title", label: "Title", required: true, placeholder: "Submit electricity — Lagos Plant — Sep 2026" }, { name: "period", label: "Period (YYYY-MM)", placeholder: "2026-09" }, { name: "dueDate", label: "Due date", type: "date" }, { name: "priority", label: "Priority", options: ["low", "medium", "high", "critical"] }, { name: "description", label: "Description" }] },
   evidence: { title: "Evidence", sub: "Private evidence library with versions, reviews and links to requirements, metrics, controls and reports.",

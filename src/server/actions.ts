@@ -259,6 +259,7 @@ export async function testControl(controlId: string, result: "effective" | "part
   await d.insert(s.controlTests).values({ controlId, testerId: me.id, result, notes });
   await logAudit({ organisationId: c.organisationId, userId: me.id, action: "control.test", entity: "control", entityId: controlId, newValue: { result } });
   revalidatePath("/controls");
+  revalidatePath(`/controls/${controlId}`);
 }
 
 export async function createTarget(input: { title: string; metricId?: string; kind?: string; baselineYear?: number; baselineValue?: number; targetYear?: number; targetValue?: number }) {

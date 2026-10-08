@@ -17,6 +17,7 @@ const NAV: { section: string; items: { href: string; label: string; icon: React.
   ]},
   { section: "Assess & Plan", items: [
     { href: "/assessments", label: "Assessments", icon: ClipboardCheck },
+    { href: "/questionnaires", label: "Questionnaires", icon: ClipboardCheck },
     { href: "/frameworks", label: "Frameworks", icon: BookOpen },
     { href: "/requirements", label: "Requirements", icon: ListChecks },
     { href: "/disclosures", label: "Disclosures", icon: FileCheck2 },
@@ -103,6 +104,7 @@ export function Topbar({ user, orgName }: { user?: { name: string; email: string
         <span className="hidden rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 sm:inline">Lagos · Ogun · Abuja</span>
       </div>
       <div className="flex items-center gap-3">
+        <Link href="/password" className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Password</Link>
         <form action="/api/auth/signout" method="post">
           <button className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50" title={user?.email}>
             {user ? `${user.name} · ${user.roleKeys[0] ?? "member"}` : "Demo mode"} — Sign out

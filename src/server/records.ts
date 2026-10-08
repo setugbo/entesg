@@ -272,3 +272,284 @@ export async function postComment(entityType: string, entityId: string, form: Fo
   await addComment(entityType, entityId, String(form.get("body") ?? ""));
   revalidatePath(`/${entityType.replace(/_/g, "-")}s/${entityId}`);
 }
+
+// ---------- Data-request items ----------
+export async function createRequestItem(requestId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "metric.create");
+  const r = (await d.select().from(s.dataRequests).where(eq(s.dataRequests.id, requestId)).limit(1))[0];
+  if (!r) throw new Error("Request not found.");
+  assertTenant(me, r.organisationId);
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  const [it] = await d.insert(s.dataRequestItems).values({
+    requestId, metricId: g("metricId"), questionId: g("questionId"),
+    label: String(form.get("label")), required: form.get("required") === "yes",
+  }).returning();
+  await logAudit({ organisationId: r.organisationId, userId: me.id, action: "request.item.create", entity: "data_request", entityId: requestId, newValue: { label: it.label } });
+  revalidatePath(`/data-requests/${requestId}`);
+}
+
+// ---------- Risk treatments ----------
+export async function createRiskTreatment(riskId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "risk.manage");
+  const r = (await d.select().from(s.risks).where(eq(s.risks.id, riskId)).limit(1))[0];
+  if (!r) throw new Error("Risk not found.");
+  assertTenant(me, r.organisationId);
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  await d.insert(s.riskTreatments).values({ riskId, action: String(form.get("action")), ownerId: g("ownerId"), dueDate: g("dueDate"), status: "open" });
+  await logAudit({ organisationId: r.organisationId, userId: me.id, action: "risk.treatment.create", entity: "risk", entityId: riskId });
+  revalidatePath(`/risks/${riskId}`);
+  revalidatePath("/risks");
+}
+
+// ---------- Control exceptions & remediations ----------
+export async function createException(controlId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "control.manage");
+  const c = (await d.select().from(s.controls).where(eq(s.controls.id, controlId)).limit(1))[0];
+  if (!c) throw new Error("Control not found.");
+  assertTenant(me, c.organisationId);
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  const [e] = await d.insert(s.controlExceptions).values({
+    controlId, testId: g("testId"), description: String(form.get("description")),
+    severity: (g("severity") ?? "medium") as never, status: "open",
+  }).returning();
+  await logAudit({ organisationId: c.organisationId, userId: me.id, action: "control.exception.create", entity: "control", entityId: controlId, newValue: { exceptionId: e.id } });
+  revalidatePath(`/controls/${controlId}`);
+}
+
+export async function createRemediation(exceptionId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "control.manage");
+  const e = (await d.select().from(s.controlExceptions).where(eq(s.controlExceptions.id, exceptionId)).limit(1))[0];
+  if (!e) throw new Error("Exception not found.");
+  const c = (await d.select().from(s.controls).where(eq(s.controls.id, e.controlId)).limit(1))[0];
+  if (c) assertTenant(me, c.organisationId);
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  await d.insert(s.remediations).values({ exceptionId, action: String(form.get("action")), ownerId: g("ownerId"), dueDate: g("dueDate"), status: "open" });
+  await logAudit({ organisationId: c?.organisationId ?? me.organisationId, userId: me.id, action: "control.remediation.create", entity: "control_exception", entityId: exceptionId });
+  if (c) revalidatePath(`/controls/${c.id}`);
+}
+
+export async function closeException(exceptionId: string, controlId: string) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "control.manage");
+  await d.update(s.controlExceptions).set({ status: "closed" }).where(eq(s.controlExceptions.id, exceptionId));
+  await logAudit({ organisationId: me.organisationId, userId: me.id, action: "control.exception.close", entity: "control_exception", entityId: exceptionId });
+  revalidatePath(`/controls/${controlId}`);
+}
+
+// ---------- Target progress ----------
+export async function updateTargetProgress(targetId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "target.manage");
+  const t = (await d.select().from(s.targets).where(eq(s.targets.id, targetId)).limit(1))[0];
+  if (!t) throw new Error("Target not found.");
+  assertTenant(me, t.organisationId);
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  const cur = g("currentValue");
+  await d.update(s.targets).set({
+    currentValue: (cur ?? null) as never,
+    status: (g("status") ?? t.status) as never,
+  }).where(eq(s.targets.id, targetId));
+  await logAudit({ organisationId: t.organisationId, userId: me.id, action: "target.progress", entity: "target", entityId: targetId, newValue: { currentValue: cur } });
+  revalidatePath(`/targets/${targetId}`);
+  revalidatePath("/targets");
+  revalidatePath("/dashboard");
+}
+
+// ---------- Tasks ----------
+export async function updateTask(taskId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "assessment.create");
+  const t = (await d.select().from(s.tasks).where(eq(s.tasks.id, taskId)).limit(1))[0];
+  if (!t) throw new Error("Task not found.");
+  assertTenant(me, t.organisationId);
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  await d.update(s.tasks).set({ status: (g("status") ?? t.status) as never, assigneeId: (g("assigneeId") ?? t.assigneeId) as never }).where(eq(s.tasks.id, taskId));
+  await logAudit({ organisationId: t.organisationId, userId: me.id, action: "task.update", entity: "task", entityId: taskId, newValue: { status: g("status") } });
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath("/tasks");
+  revalidatePath("/dashboard");
+}
+
+// ---------- Disclosure ↔ requirement mapping ----------
+export async function linkDisclosureRequirement(disclosureId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "requirement.manage");
+  const x = (await d.select().from(s.disclosures).where(eq(s.disclosures.id, disclosureId)).limit(1))[0];
+  if (!x) throw new Error("Disclosure not found.");
+  if (x.organisationId) assertTenant(me, x.organisationId);
+  const requirementId = String(form.get("requirementId"));
+  await d.insert(s.disclosureRequirements).values({ disclosureId, requirementId: requirementId as never });
+  await logAudit({ organisationId: me.organisationId, userId: me.id, action: "disclosure.link", entity: "disclosure", entityId: disclosureId, newValue: { requirementId } });
+  revalidatePath(`/disclosures/${disclosureId}`);
+}
+
+// ---------- Questionnaire builder ----------
+export async function createQuestionnaire(form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "requirement.manage");
+  const [q] = await d.insert(s.questionnaires).values({
+    organisationId: me.organisationId, title: String(form.get("title")),
+    description: String(form.get("description") ?? ""), status: "active", createdBy: me.id,
+  }).returning();
+  await logAudit({ organisationId: me.organisationId, userId: me.id, action: "questionnaire.create", entity: "questionnaire", entityId: q.id });
+  revalidatePath("/questionnaires");
+  return q.id;
+}
+
+export async function createSection(questionnaireId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "requirement.manage");
+  const existing = await d.select().from(s.questionnaireSections).where(eq(s.questionnaireSections.questionnaireId, questionnaireId));
+  const [sec] = await d.insert(s.questionnaireSections).values({
+    questionnaireId: questionnaireId as never, title: String(form.get("title")), position: existing.length,
+  }).returning();
+  await logAudit({ organisationId: me.organisationId, userId: me.id, action: "questionnaire.section.create", entity: "questionnaire", entityId: questionnaireId });
+  revalidatePath(`/questionnaires/${questionnaireId}`);
+  return sec.id;
+}
+
+export async function createQuestion(sectionId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "requirement.manage");
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  const sec = (await d.select().from(s.questionnaireSections).where(eq(s.questionnaireSections.id, sectionId)).limit(1))[0];
+  if (!sec) throw new Error("Section not found.");
+  const siblings = await d.select().from(s.questions).where(eq(s.questions.sectionId, sectionId));
+  const [q] = await d.insert(s.questions).values({
+    sectionId: sectionId as never, code: String(form.get("code")), text: String(form.get("text")),
+    type: (g("type") ?? "yes_no") as never, guidance: g("guidance"),
+    weight: (g("weight") ?? "1") as never, requiredEvidence: g("requiredEvidence") === "yes",
+    ownerRole: g("ownerRole"), requirementId: g("requirementId"), position: siblings.length,
+  }).returning();
+  const opts = String(form.get("options") ?? "").split(",").map((o) => o.trim()).filter(Boolean);
+  for (let i = 0; i < opts.length; i++) {
+    await d.insert(s.questionOptions).values({ questionId: q.id, label: opts[i], value: opts[i].toLowerCase().replace(/\s+/g, "_"), score: "0" as never, position: i });
+  }
+  const reqId = g("requirementId");
+  if (reqId) await d.insert(s.questionMappings).values({ questionId: q.id, requirementId: reqId as never });
+  await logAudit({ organisationId: me.organisationId, userId: me.id, action: "question.create", entity: "question", entityId: q.id });
+  revalidatePath(`/questionnaires/${sec.questionnaireId}`);
+}
+
+// ---------- Framework / version / requirement management ----------
+export async function createFramework(form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "requirement.manage");
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  const [f] = await d.insert(s.frameworks).values({
+    code: String(form.get("code")), name: String(form.get("name")),
+    publisher: g("publisher"), description: g("description"),
+  }).returning().catch(async () => {
+    return d.select().from(s.frameworks).where(eq(s.frameworks.code, String(form.get("code")))).limit(1);
+  });
+  await logAudit({ organisationId: me.organisationId, userId: me.id, action: "framework.create", entity: "framework", entityId: f.id });
+  revalidatePath("/frameworks");
+  return f.id;
+}
+
+export async function createFrameworkVersion(frameworkId: string, form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "requirement.manage");
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  const [v] = await d.insert(s.frameworkVersions).values({
+    frameworkId: frameworkId as never, version: String(form.get("version")),
+    effectiveDate: g("effectiveDate"), jurisdiction: g("jurisdiction"), sourceUrl: g("sourceUrl"), status: "active",
+  }).returning();
+  await logAudit({ organisationId: me.organisationId, userId: me.id, action: "framework.version.create", entity: "framework", entityId: frameworkId });
+  revalidatePath("/frameworks");
+  return v.id;
+}
+
+export async function createRequirement(form: FormData) {
+  const d = needDb();
+  const me = await orgContext();
+  await requirePerm(me, "requirement.manage");
+  const g = (k: string) => { const v = form.get(k); return v == null || v === "" ? null : String(v); };
+  const [r] = await d.insert(s.requirements).values({
+    frameworkVersionId: g("frameworkVersionId"), code: String(form.get("code")), title: String(form.get("title")),
+    description: g("description"), topic: g("topic"), category: g("category"),
+    jurisdiction: g("jurisdiction"), sector: g("sector"),
+    sourceOrg: g("sourceOrg"), sourceDoc: g("sourceDoc"), sourceUrl: g("sourceUrl"),
+    interpretation: g("interpretation"), validationStatus: "REQUIRES SME VALIDATION",
+    criticality: ((g("criticality") ?? "medium") as string) as never,
+  }).returning();
+  await logAudit({ organisationId: me.organisationId, userId: me.id, action: "requirement.create", entity: "requirement", entityId: r.id });
+  revalidatePath("/requirements");
+  return r.id;
+}
+
+// ---------- User administration ----------
+export async function setUserStatus(userId: string, status: "active" | "suspended") {
+  const d = needDb();
+  const me = await getSessionUser();
+  if (!me) throw new Error("Not authenticated.");
+  await requirePerm(me, "user.manage");
+  const u = (await d.select().from(s.users).where(eq(s.users.id, userId)).limit(1))[0];
+  if (!u) throw new Error("User not found.");
+  if (u.id === me.id) throw new Error("You cannot suspend your own account.");
+  if (!me.roleKeys.includes("SUPER_ADMIN") && u.organisationId !== me.organisationId) throw new Error("Tenant violation.");
+  await d.update(s.users).set({ status: status as never }).where(eq(s.users.id, userId));
+  await logAudit({ organisationId: u.organisationId, userId: me.id, action: `user.${status}`, entity: "user", entityId: userId });
+  revalidatePath("/admin");
+}
+
+export async function setUserRole(userId: string, form: FormData) {
+  const d = needDb();
+  const me = await getSessionUser();
+  if (!me) throw new Error("Not authenticated.");
+  await requirePerm(me, "user.manage");
+  const u = (await d.select().from(s.users).where(eq(s.users.id, userId)).limit(1))[0];
+  if (!u) throw new Error("User not found.");
+  if (!me.roleKeys.includes("SUPER_ADMIN") && u.organisationId !== me.organisationId) throw new Error("Tenant violation.");
+  const role = (await d.select().from(s.roles).where(eq(s.roles.key, String(form.get("role")))))[0];
+  if (!role) throw new Error("Unknown role.");
+  await d.delete(s.userRoles).where(eq(s.userRoles.userId, userId));
+  await d.insert(s.userRoles).values({ userId, roleId: role.id, organisationId: u.organisationId });
+  await logAudit({ organisationId: u.organisationId, userId: me.id, action: "user.role.change", entity: "user", entityId: userId, newValue: { role: role.key } });
+  revalidatePath("/admin");
+}
+
+export async function resetUserPassword(userId: string) {
+  const d = needDb();
+  const me = await getSessionUser();
+  if (!me) throw new Error("Not authenticated.");
+  await requirePerm(me, "user.manage");
+  const u = (await d.select().from(s.users).where(eq(s.users.id, userId)).limit(1))[0];
+  if (!u) throw new Error("User not found.");
+  if (!me.roleKeys.includes("SUPER_ADMIN") && u.organisationId !== me.organisationId) throw new Error("Tenant violation.");
+  const temp = `Gh${Date.now().toString(36)}!x9`;
+  await d.update(s.users).set({ passwordHash: await hash(temp) }).where(eq(s.users.id, userId));
+  await logAudit({ organisationId: u.organisationId, userId: me.id, action: "user.password.reset", entity: "user", entityId: userId });
+  return temp;
+}
+
+export async function changePassword(form: FormData) {
+  const d = needDb();
+  const me = await getSessionUser();
+  if (!me) throw new Error("Not authenticated.");
+  const u = (await d.select().from(s.users).where(eq(s.users.id, me.id)).limit(1))[0];
+  if (!u?.passwordHash) throw new Error("Account has no password set. Ask an admin to reset it.");
+  const { compare } = await import("./password");
+  if (!(await compare(String(form.get("current") ?? ""), u.passwordHash))) throw new Error("Current password is incorrect.");
+  const next = String(form.get("next") ?? "");
+  if (next.length < 10) throw new Error("New password must be at least 10 characters.");
+  await d.update(s.users).set({ passwordHash: await hash(next) }).where(eq(s.users.id, me.id));
+  await logAudit({ organisationId: me.organisationId, userId: me.id, action: "user.password.change", entity: "user", entityId: me.id });
+}

@@ -10,6 +10,21 @@ function demoRows(cells: string[][], prefix: string): ModuleRow[] {
   return cells.map((c, i) => ({ id: `${prefix}-${i}`, cells: c }));
 }
 
+/** Target progress % from baseline → current → target (reduction or growth aware). */
+export function progressOf(baseline: unknown, current: unknown, target: unknown): string {
+  const b = Number(baseline), c = Number(current), t = Number(target);
+  if ([b, c, t].some((n) => Number.isNaN(n)) || current == null || target == null) return "—";
+  if (t === b) return c === t ? "100%" : "—";
+  const p = ((c - b) / (t - b)) * 100;
+  return `${Math.max(0, Math.min(999, Math.round(p)))}%`;
+}
+
+function coverage(done: number, total: number): { label: string; verdict: string } {
+  if (!total) return { label: "No data", verdict: "medium" };
+  const p = Math.round((done / total) * 100);
+  return { label: `${p}% (${done}/${total})`, verdict: p >= 80 ? "on_track" : p >= 50 ? "attention" : "critical" };
+}
+
 const DEMO_TABLES: Record<string, { columns: string[]; rows: string[][]; linkPrefix?: string }> = {
   disclosures: { columns: ["Title", "Status"], rows: [["IFRS S2 Climate disclosure — Scope 1", "draft"], ["GRI 305 Emissions disclosure", "review"]] },
   materiality: { columns: ["Topic", "Impact", "Financial"], rows: DEMO.materiality.map((t) => [t.topic, String(t.impact), String(t.financial)]) },
@@ -60,17 +75,21 @@ export async function getModule(key: string, orgId: string | null): Promise<Modu
       }
       case "risks": {
         const r = await db.select().from(s.risks).where(eq(s.risks.organisationId, orgId)).limit(50);
-        if (r.length) return { columns: ["Risk", "Category"], rows: r.map((x) => ({ id: null, cells: [x.title, x.category ?? "—"] })), demo: false };
+        if (r.length) return { columns: ["Risk", "Category"], rows: r.map((x) => ({ id: x.id, cells: [x.title, x.category ?? "—"] })), demo: false, linkPrefix: "/risks" };
         break;
       }
       case "controls": {
         const r = await db.select().from(s.controls).where(eq(s.controls.organisationId, orgId)).limit(50);
-        if (r.length) return { columns: ["Control", "Code"], rows: r.map((x) => ({ id: null, cells: [x.title, x.code] })), demo: false };
+        if (r.length) {
+          const t = await db.select().from(s.controlTests).limit(500);
+          const last = (cid: string) => t.filter((x) => x.controlId === cid).sort((a, b) => Number(b.testedAt) - Number(a.testedAt))[0];
+          return { columns: ["Control", "Code", "Last result"], rows: r.map((x) => ({ id: x.id, cells: [x.title, x.code, (last(x.id)?.result ?? "not_tested").replace(/_/g, " ")] })), demo: false, linkPrefix: "/controls" };
+        }
         break;
       }
       case "targets": {
         const r = await db.select().from(s.targets).where(eq(s.targets.organisationId, orgId)).limit(50);
-        if (r.length) return { columns: ["Target", "Kind"], rows: r.map((x) => ({ id: null, cells: [x.title, x.kind ?? "—"] })), demo: false };
+        if (r.length) return { columns: ["Target", "Kind", "Progress"], rows: r.map((x) => ({ id: x.id, cells: [x.title, x.kind ?? "—", progressOf(x.baselineValue, x.currentValue, x.targetValue)] })), demo: false, linkPrefix: "/targets" };
         break;
       }
       case "emissions": {
@@ -85,6 +104,102 @@ export async function getModule(key: string, orgId: string | null): Promise<Modu
           if (t.length) return { columns: ["Topic", "Impact", "Financial"], rows: t.map((x) => ({ id: null, cells: [x.topic, String(x.impactScore ?? "—"), String(x.financialScore ?? "—")] })), demo: false };
         }
         break;
+      }
+      case "disclosures": {
+        const r = await db.select().from(s.disclosures).where(eq(s.disclosures.organisationId, orgId)).limit(50);
+        if (r.length) {
+          const links = await db.select().from(s.disclosureRequirements).limit(500);
+          return { columns: ["Title", "Status", "Requirements"], rows: r.map((x) => ({ id: x.id, cells: [x.title, x.status ?? "draft", String(links.filter((l) => l.disclosureId === x.id).length)] })), demo: false, linkPrefix: "/disclosures" };
+        }
+        break;
+      }
+      case "tasks": {
+        const r = await db.select().from(s.tasks).where(eq(s.tasks.organisationId, orgId)).orderBy(desc(s.tasks.createdAt)).limit(50);
+        if (r.length) return { columns: ["Task", "Status", "Due"], rows: r.map((x) => ({ id: x.id, cells: [x.title, (x.status ?? "open").replace(/_/g, " "), x.dueDate ?? "—"] })), demo: false, linkPrefix: "/tasks" };
+        break;
+      }
+      case "opportunities": {
+        const r = await db.select().from(s.opportunities).where(eq(s.opportunities.organisationId, orgId)).limit(50);
+        if (r.length) return { columns: ["Opportunity", "Category"], rows: r.map((x) => ({ id: null, cells: [x.title, x.category ?? "—"] })), demo: false };
+        break;
+      }
+      case "energy":
+      case "water":
+      case "waste":
+      case "social":
+      case "governance": {
+        const catMap: Record<string, string[]> = {
+          energy: ["Energy"], water: ["Water"], waste: ["Waste"],
+          social: ["Workforce", "Health & Safety"], governance: ["Board & Ethics"],
+        };
+        const metrics = await db.select().from(s.metrics);
+        const cats = await db.select().from(s.metricCategories);
+        const wanted = new Set((catMap[key] ?? []).map((n) => cats.find((c) => c.name === n)?.id).filter(Boolean) as string[]);
+        const mine = metrics.filter((m) => !m.organisationId || m.organisationId === orgId);
+        const mids = new Set(mine.filter((m) => m.categoryId && wanted.has(m.categoryId)).map((m) => m.id));
+        if (mids.size) {
+          const vals = await db.select().from(s.metricValues).where(eq(s.metricValues.organisationId, orgId)).limit(200);
+          const rows = vals.filter((v) => mids.has(v.metricId))
+            .sort((a, b) => String(b.period).localeCompare(String(a.period))).slice(0, 30)
+            .map((v) => {
+              const m = mine.find((x) => x.id === v.metricId);
+              return { id: null, cells: [`${m?.code ?? "?"} — ${m?.name ?? v.metricId.slice(0, 8)}`, v.period, String(v.value), v.status.replace(/_/g, " ")] };
+            });
+          if (rows.length) return { columns: ["Metric", "Period", "Value", "Status"], rows, demo: false };
+        }
+        break;
+      }
+      case "organisations": {
+        const [ents, st, deps] = await Promise.all([
+          db.select().from(s.businessEntities).where(eq(s.businessEntities.organisationId, orgId)),
+          db.select().from(s.sites).where(eq(s.sites.organisationId, orgId)),
+          db.select().from(s.departments).where(eq(s.departments.organisationId, orgId)),
+        ]);
+        const rows: ModuleRow[] = [
+          ...ents.map((e) => ({ id: null, cells: [e.name, "Business entity", e.code ?? "—"] })),
+          ...st.map((x) => ({ id: null, cells: [x.name, "Site", [x.city, x.state].filter(Boolean).join(", ") || "—"] })),
+          ...deps.map((x) => ({ id: null, cells: [x.name, "Department", x.code ?? "—"] })),
+        ];
+        if (rows.length) return { columns: ["Name", "Type", "Detail"], rows, demo: false };
+        break;
+      }
+      case "settings": {
+        const st = (await db.select().from(s.organisationSettings).where(eq(s.organisationSettings.organisationId, orgId)).limit(1))[0];
+        if (st) {
+          return {
+            columns: ["Setting", "Value"],
+            rows: [
+              { id: null, cells: ["Base year", String(st.baseYear ?? "—")] },
+              { id: null, cells: ["Currency", st.currency ?? "—"] },
+              { id: null, cells: ["Internal carbon price", st.internalCarbonPrice != null ? `${st.currency ?? ""} ${st.internalCarbonPrice} / tCO₂e` : "—"] },
+              { id: null, cells: ["Fiscal year start", st.fiscalYearStart ?? "—"] },
+            ],
+            demo: false,
+          };
+        }
+        break;
+      }
+      case "assurance": {
+        const [vals, ev, runsA, ass, reps, ctrls, tst] = await Promise.all([
+          db.select().from(s.metricValues).where(eq(s.metricValues.organisationId, orgId)).limit(500),
+          db.select().from(s.evidence).where(eq(s.evidence.organisationId, orgId)).limit(500),
+          db.select().from(s.calculationRuns).where(eq(s.calculationRuns.organisationId, orgId)).limit(200),
+          db.select().from(s.assessments).where(eq(s.assessments.organisationId, orgId)).limit(100),
+          db.select().from(s.reports).where(eq(s.reports.organisationId, orgId)).limit(100),
+          db.select().from(s.controls).where(eq(s.controls.organisationId, orgId)).limit(200),
+          db.select().from(s.controlTests).limit(1000),
+        ]);
+        const submittedVals = vals.filter((v) => v.status !== "draft");
+        const effCtrls = ctrls.filter((c) => tst.filter((t) => t.controlId === c.id).sort((a, b) => Number(b.testedAt) - Number(a.testedAt))[0]?.result === "effective").length;
+        const checks: [string, { label: string; verdict: string }][] = [
+          ["Metric values approved", coverage(vals.filter((v) => v.status === "approved").length, submittedVals.length)],
+          ["Evidence accepted", coverage(ev.filter((e) => e.status === "accepted").length, ev.length)],
+          ["GHG runs approved", coverage(runsA.filter((r) => r.status === "approved").length, runsA.length)],
+          ["Assessments approved", coverage(ass.filter((a) => a.status === "approved").length, ass.length)],
+          ["Controls effective", coverage(effCtrls, ctrls.length)],
+          ["Reports published", coverage(reps.filter((r) => r.status === "published").length, reps.length)],
+        ];
+        return { columns: ["Check", "Coverage"], rows: checks.map(([t, c]) => ({ id: null, cells: [t, `${c.label} · ${c.verdict.replace(/_/g, " ")}`] })), demo: false };
       }
       default:
         break;

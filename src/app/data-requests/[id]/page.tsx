@@ -5,7 +5,7 @@ import * as s from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getSessionUser, assertTenant } from "@/lib/auth";
 import { sendRequest, submitRequest, validateRequest, approveRequest, returnRequest } from "@/server/actions";
-import { postComment } from "@/server/records";
+import { postComment, createRequestItem } from "@/server/records";
 import { notFound } from "next/navigation";
 
 export default async function RequestDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -39,6 +39,11 @@ export default async function RequestDetail({ params }: { params: Promise<{ id: 
         <Card>
           <div className="border-b border-slate-100 px-5 py-3 text-sm font-bold">Requested items ({items.length})</div>
           <DataTable columns={["Item", "Required"]} rows={items.map((i) => [i.label, i.required ? "Yes" : "No"])} />
+          <form action={async (f: FormData) => { "use server"; await createRequestItem(id, f); }} className="flex flex-wrap gap-2 border-t border-slate-100 p-5">
+            <input name="label" required placeholder="Item label (e.g. Diesel litres — Ogun — Sep 2026)" className="min-w-56 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <label className="flex items-center gap-1 text-xs text-slate-600"><input type="checkbox" name="required" value="yes" defaultChecked /> required</label>
+            <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold">Add item</button>
+          </form>
         </Card>
         <Card>
           <div className="border-b border-slate-100 px-5 py-3 text-sm font-bold">Submissions ({subs.length})</div>

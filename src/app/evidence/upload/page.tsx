@@ -12,6 +12,11 @@ export default async function UploadEvidencePage() {
   return (
     <AppShell>
       <PageHeader title="Upload evidence" sub="PDF, Excel, Word, CSV, images — max 25MB. Stored privately (R2/S3 signed URLs or local private store). Identical re-uploads create a new version." />
+      {!process.env.S3_BUCKET && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
+          <strong>Local storage mode:</strong> S3/R2 is not configured, so uploads persist on this server's disk only (ephemeral on Vercel). Set <code>S3_ENDPOINT / S3_BUCKET / S3 keys</code> for durable private storage.
+        </div>
+      )}
       <Card>
         {!db || !user ? (
           <p className="p-5 text-sm text-amber-800">Uploads require a configured database. Set DATABASE_URL, migrate and seed first.</p>
