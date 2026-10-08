@@ -132,7 +132,6 @@ async function metricTransition(id: string, to: typeof s.metricValues.$inferSele
   await notify(v.organisationId, v.submittedBy, `Metric value ${to}`, `Period ${v.period} · value ${v.value}`);
   revalidatePath("/metrics");
 }
-}
 export async function validateMetricValue(id: string) { return metricTransition(id, "validated", "metric.validate"); }
 export async function approveMetricValue(id: string) { return metricTransition(id, "approved", "metric.approve"); }
 export async function rejectMetricValue(id: string) { return metricTransition(id, "rejected", "metric.reject"); }
@@ -165,7 +164,6 @@ export async function linkEvidence(evidenceId: string, entityType: string, entit
   await logAudit({ organisationId: e.organisationId, userId: me.id, action: "evidence.link", entity: "evidence", entityId: evidenceId, newValue: { entityType, entityId } });
   revalidatePath(`/evidence/${evidenceId}`);
 }
-}
 
 // ---------- Report data links (approved-data gate lives at publish time) ----------
 export async function linkReportData(reportId: string, entityType: string, entityId: string) {
@@ -179,7 +177,6 @@ export async function linkReportData(reportId: string, entityType: string, entit
   await d.insert(s.reportDataLinks).values({ reportId, sectionId: secs[0]?.id ?? null, entityType, entityId: entityId as never });
   await logAudit({ organisationId: r.organisationId, userId: me.id, action: "report.link", entity: "report", entityId: reportId, newValue: { entityType, entityId } });
   revalidatePath(`/reports/${reportId}`);
-}
 }
 
 // ---------- Escalations: overdue data requests ----------
@@ -247,7 +244,6 @@ export async function createUser(form: FormData) {
   await notify(targetOrg, u.id, "Welcome to entESG", `You were added as ${roleKey}.`);
   revalidatePath("/admin");
 }
-}
 
 function randomDefaultPassword() {
   return `Gh${Date.now().toString(36)}!x7`;
@@ -268,7 +264,6 @@ export async function assignConsultant(form: FormData) {
   await logAudit({ organisationId, userId: me.id, action: "consultant.assign", entity: "organisation", entityId: organisationId, newValue: { userId } });
   revalidatePath("/consultant");
   revalidatePath("/admin");
-}
 }
 
 // ---------- Comments ----------

@@ -75,7 +75,6 @@ async function transitionAssessment(id: string, to: typeof s.assessments.$inferS
   revalidatePath("/assessments");
   revalidatePath(`/assessments/${id}`);
 }
-}
 
 export async function submitAssessment(id: string) { return transitionAssessment(id, "submitted", "assessment.submit"); }
 export async function reviewAssessment(id: string) { return transitionAssessment(id, "under_review", "assessment.review"); }
@@ -101,7 +100,6 @@ export async function saveAnswer(assessmentId: string, questionId: string, value
   await logAudit({ organisationId: a.organisationId, userId: me.id, action: "assessment.answer", entity: "assessment", entityId: assessmentId });
   revalidatePath(`/assessments/${assessmentId}`);
 }
-}
 
 // ---------- Data requests ----------
 async function transitionRequest(id: string, to: typeof s.dataRequests.$inferSelect.status, action: string) {
@@ -118,7 +116,6 @@ async function transitionRequest(id: string, to: typeof s.dataRequests.$inferSel
   await notify(r.organisationId, r.ownerId, `Data request ${to.replace(/_/g, " ")}`, r.title);
   revalidatePath("/data-requests");
   revalidatePath(`/data-requests/${id}`);
-}
 }
 export async function sendRequest(id: string) { return transitionRequest(id, "sent", "request.send"); }
 export async function submitRequest(id: string) { return transitionRequest(id, "submitted", "request.submit"); }
@@ -190,7 +187,6 @@ export async function reviewEvidence(id: string, decision: "approved" | "rejecte
   revalidatePath("/evidence");
   revalidatePath(`/evidence/${id}`);
 }
-}
 
 // ---------- GHG ----------
 export async function runGhgCalculation(input: { scope: string; period: string; inputs: { label: string; activityData: number; unit: string; factorId: string; siteId?: string }[] }) {
@@ -236,7 +232,6 @@ export async function approveGhgRun(id: string) {
   await logAudit({ organisationId: r.organisationId, userId: me.id, action: "ghg.approve", entity: "calculation_run", entityId: id });
   revalidatePath("/emissions");
 }
-}
 
 // ---------- Risks / controls / targets / reports ----------
 export async function createRisk(input: { title: string; description?: string; category?: string; likelihood?: number; impact?: number }) {
@@ -264,7 +259,6 @@ export async function testControl(controlId: string, result: "effective" | "part
   await d.insert(s.controlTests).values({ controlId, testerId: me.id, result, notes });
   await logAudit({ organisationId: c.organisationId, userId: me.id, action: "control.test", entity: "control", entityId: controlId, newValue: { result } });
   revalidatePath("/controls");
-}
 }
 
 export async function createTarget(input: { title: string; metricId?: string; kind?: string; baselineYear?: number; baselineValue?: number; targetYear?: number; targetValue?: number }) {
@@ -321,7 +315,6 @@ export async function transitionReport(id: string, to: "review" | "approval" | "
   await logAudit({ organisationId: r.organisationId, userId: me.id, action: `report.${to}`, entity: "report", entityId: id });
   revalidatePath("/reports");
   revalidatePath(`/reports/${id}`);
-}
 }
 
 export async function addComment(entityType: string, entityId: string, body: string) {
